@@ -14,6 +14,9 @@ import type { S3CompatibleConfig, StorageConfig } from '../../storage/interfaces
 import type { ThumbnailPluginData } from '../thumbnail-storage/shared.js'
 import { THUMBNAIL_PLUGIN_DATA_KEY } from '../thumbnail-storage/shared.js'
 import type { BuilderPlugin } from '../types.js'
+import type { CloudflareMiddlewareVendorConfig } from './vendors/cloudflare-moddleware.js'
+import { CloudflareMiddlewareVendor } from './vendors/cloudflare-moddleware.js'
+import type { OgVendor } from './vendors/types'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../../../..')
@@ -36,7 +39,10 @@ interface OgImagePluginOptions {
   siteName?: string
   accentColor?: string
   siteConfigPath?: string
+  vendor?: OgVendorConfig
 }
+
+type OgVendorConfig = CloudflareMiddlewareVendorConfig
 
 interface ResolvedPluginConfig {
   directory: string
@@ -76,6 +82,11 @@ function joinSegments(...segments: Array<string | null | undefined>): string {
     .map((segment) => (segment ?? '').replaceAll('\\', '/').replaceAll(/^\/+|\/+$/g, ''))
     .filter((segment) => segment.length > 0)
   return filtered.join('/')
+}
+
+function resolveSiteConfigPath(siteConfigPath: string | undefined): string {
+  if (!siteConfigPath) return path.resolve(repoRoot, 'config.json')
+  return path.isAbsolute(siteConfigPath) ? siteConfigPath : path.resolve(repoRoot, siteConfigPath)
 }
 
 function resolveRemotePrefix(config: UploadableStorageConfig, directory: string): string {
@@ -162,9 +173,7 @@ async function loadSiteMeta(options: OgImagePluginOptions, logger: Logger): Prom
     accentColor: options.accentColor?.trim() || DEFAULT_ACCENT_COLOR,
   }
 
-  const siteConfigPath = options.siteConfigPath
-    ? path.resolve(process.cwd(), options.siteConfigPath)
-    : path.resolve(process.cwd(), 'config.json')
+  const siteConfigPath = resolveSiteConfigPath(options.siteConfigPath)
 
   try {
     const raw = await readFile(siteConfigPath, 'utf8')
@@ -285,6 +294,17 @@ function getPhotoDimensions(photo: PhotoManifestItem) {
   }
 }
 
+function createVendor(config: OgVendorConfig): OgVendor {
+  switch (config.type) {
+    case 'cloudflare-middleware': {
+      return new CloudflareMiddlewareVendor(config)
+    }
+    default: {
+      throw new Error(`Unknown OG vendor type: ${String((config as { type?: string }).type)}`)
+    }
+  }
+}
+
 /**
  * Render Open Graph images for processed photos and upload them to remote storage.
  *
@@ -295,6 +315,7 @@ function getPhotoDimensions(photo: PhotoManifestItem) {
 export default function ogImagePlugin(options: OgImagePluginOptions = {}): BuilderPlugin {
   let resolved: ResolvedPluginConfig | null = null
   let externalStorageManager: StorageManager | null = null
+  let vendor: OgVendor | null = null
 
   return {
     name: PLUGIN_NAME,
@@ -303,6 +324,15 @@ export default function ogImagePlugin(options: OgImagePluginOptions = {}): Build
         const enable = options.enable ?? true
         const directory = normalizeDirectory(options.directory)
         const contentType = options.contentType ?? DEFAULT_CONTENT_TYPE
+
+        if (options.vendor && !vendor) {
+          try {
+            vendor = createVendor(options.vendor)
+          } catch (error) {
+            logger.main.error('OG image plugin: failed to initialize vendor config.', error)
+            throw error
+          }
+        }
 
         if (!enable) {
           resolved = {
@@ -449,8 +479,20 @@ export default function ogImagePlugin(options: OgImagePluginOptions = {}): Build
           logger.main.error(`OG image plugin: failed to render OG image for ${item.id}`, error)
         }
       },
+      afterBuild: async ({ logger }) => {
+        if (!vendor) return
+
+        try {
+          await vendor.build({ repoRoot, logger })
+        } catch (error) {
+          logger.main.error('OG image plugin: vendor build step failed.', error)
+        }
+      },
     },
   }
 }
 
-export type { OgImagePluginOptions }
+export type { OgImagePluginOptions, OgVendorConfig }
+
+export { type CloudflareMiddlewareVendorConfig } from './vendors/cloudflare-moddleware.js'
+export { type OgVendorKind } from './vendors/types.js'
