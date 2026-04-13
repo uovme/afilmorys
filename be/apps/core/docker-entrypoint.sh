@@ -6,5 +6,3 @@ node ./dist/main.js db:migrate
 
 echo "[entrypoint] Starting application..."
 exec "$@"
-
-
