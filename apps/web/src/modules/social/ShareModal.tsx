@@ -6,7 +6,7 @@ import { cloneElement, isValidElement, useCallback, useMemo, useState } from 're
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { siteConfig } from '~/config'
+import { injectConfig, siteConfig } from '~/config'
 import type { PhotoManifest } from '~/types/photo'
 
 import { CopyButton } from './CopyButton'
@@ -88,12 +88,21 @@ const ShareSheet: ModalComponent<ShareSheetProps> = ({ photo, blobSrc, dismiss }
     return `${resolvedBaseUrl}${path}`
   }, [photo.id, resolvedBaseUrl])
 
+  const canEmbed = injectConfig.useNext || injectConfig.useCloud
+
+  const embedCode = useMemo(() => {
+    const base = resolvedBaseUrl || ''
+    return `<script async src="${base}/share/embed.js" data-afilmory-photo="${photo.id}" data-aspect="${photo.width}:${photo.height}" data-width="100%"></script>`
+  }, [photo.height, photo.id, photo.width, resolvedBaseUrl])
+
   const shareTitle = photo.title || t('photo.share.default.title')
   const shareText = t('photo.share.text', { title: shareTitle })
 
   const canUseNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
   const socialOptions = useMemo(() => getSocialOptions(t), [t])
+
+  const actionColumns = 5 + (canUseNativeShare ? 1 : 0) + (canEmbed ? 1 : 0)
 
   const handleNativeShare = useCallback(async () => {
     if (!canUseNativeShare) {
@@ -127,6 +136,17 @@ const ShareSheet: ModalComponent<ShareSheetProps> = ({ photo, blobSrc, dismiss }
       throw new Error('Failed to copy')
     }
   }, [shareLink, t])
+
+  const handleCopyEmbed = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(embedCode)
+      toast.success(t('photo.share.embed.copied'))
+    }
+    catch {
+      toast.error(t('photo.share.copy.failed'))
+      throw new Error('Failed to copy')
+    }
+  }, [embedCode, t])
 
   const handleDownloadOriginal = useCallback(async () => {
     try {
@@ -219,7 +239,14 @@ const ShareSheet: ModalComponent<ShareSheetProps> = ({ photo, blobSrc, dismiss }
 
       <div className="space-y-2">
         <p className="text-xs font-medium text-white/50">{t('photo.share.actions')}</p>
-        <div className={clsxm('grid gap-2', canUseNativeShare ? 'grid-cols-6' : 'grid-cols-5')}>
+        <div
+          className={clsxm(
+            'grid gap-2',
+            actionColumns === 7 && 'grid-cols-7',
+            actionColumns === 6 && 'grid-cols-6',
+            actionColumns === 5 && 'grid-cols-5',
+          )}
+        >
           {/* Native share button (if available) */}
           {canUseNativeShare && (
             <ShareActionButton
@@ -238,6 +265,15 @@ const ShareSheet: ModalComponent<ShareSheetProps> = ({ photo, blobSrc, dismiss }
               onClick={() => handleSocialShare(option.url)}
             />
           ))}
+          {/* Embed iframe code (cloud / SSR only) */}
+          {canEmbed && (
+            <ShareActionButton
+              icon="i-mingcute-code-line"
+              label="Embed"
+              onClick={handleCopyEmbed}
+              title={t('photo.share.embed.description')}
+            />
+          )}
           {/* Download buttons */}
           <ShareActionButton
             icon="i-mingcute-download-3-line"

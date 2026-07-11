@@ -32,3 +32,6 @@ apps/web/src/data/.cache/
 
 # og-image-storage plugin generated files
 functions/
+
+# superpowers brainstorming workspace
+.superpowers/
