@@ -3,7 +3,7 @@
     "target": "ESNext",
     "jsx": "preserve",
     "lib": ["DOM", "DOM.Iterable", "ESNext"],
-    "ignoreDeprecations": "6.0",
+    "ignoreDeprecations": "5.0",
     "module": "ESNext",
     "moduleResolution": "bundler",
     "paths": {
@@ -17,7 +17,6 @@
     "noImplicitAny": false,
     "noEmit": true,
     "allowSyntheticDefaultImports": true,
-    "esModuleInterop": false,
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "skipDefaultLibCheck": true,
